@@ -447,10 +447,49 @@ Fired when the backend confirms the claim token is valid and the funds are avail
 | Property | Type | Value / Description |
 |----------|------|---------------------|
 | `journey` | string | `"recipient"` |
-| `claim_id` | string | |
-| `asset_type` | string | |
-| `expiry_days_remaining` | number | Days until expiration at time of opening |
-| `verification_time_ms` | number | Time taken for backend verification |
+| `claim_id` | string | Backend `accountId` from the verify response (see mapping below) |
+| `asset_type` | string | Derived from the verify response `asset` (see mapping below) |
+| `expiry_days_remaining` | number | Days until expiration at time of opening, derived from the response `expiresAt` |
+| `verification_time_ms` | number | Time taken for backend verification, measured by the emitter (not returned by the backend) |
+
+**Correspondence with the backend**
+
+This event corresponds to an HTTP 200 from bridgelet-sdk `POST /claims/verify`, which `ClaimsController` hands to `TokenVerificationProvider.verifyClaimToken`. That provider throws for every non-success case, so a 200 always carries `valid: true`. There is no "verified but invalid" outcome, and `Claim Verified` never fires for a rejection.
+
+The 200 body (`ClaimVerificationResponseDto`) has five fields. Build the payload from them rather than re-deriving values elsewhere:
+
+| Response field | Used for |
+|----------------|----------|
+| `valid` | Always `true` on a 200. Not emitted. |
+| `accountId` | `claim_id`. It is the same identifier `Payment Created` uses on the sender side, so the two sides of one claim can be matched (section 9.3). |
+| `amount` | Not part of this event. |
+| `asset` | `asset_type`. The backend returns an identifier, either `"native"` or `"CODE:ISSUER"`. Take the part before the colon and map `native` to `XLM` (for example `"USDC:G..."` becomes `"USDC"`). |
+| `expiresAt` | `expiry_days_remaining`, computed from this timestamp at event time. The backend does not return a remaining-days value. |
+
+`verification_time_ms` is not in the response. Measured in the browser it is the full request round trip, including network latency. Measured on the server it is handler time only. The two are not comparable, so do not mix them in one metric.
+
+**Rejections (no `Claim Verified`)**
+
+Failure detail is not in a response body. The backend signals it through the HTTP status and an exception message, which map onto the `error_type` values in section 6 as follows:
+
+| Backend outcome | HTTP status | Message | `error_type` |
+|-----------------|-------------|---------|--------------|
+| Token malformed, bad signature, or wrong token type | 401 | `Invalid token signature`, `Invalid token type` | `invalid_token` |
+| No account matches the token | 401 | `Invalid claim token` | `invalid_token` |
+| Token or account past its expiry | 401 | `Token has expired`, `Claim token has expired`, `Account has expired` | `expired_token` |
+| Claim already redeemed | 409 | `Claim has already been redeemed` | `already_claimed` |
+| Account initializing, awaiting payment, in a failed state, or in an unknown state | 400 | various | `unknown` (no dedicated value in section 6) |
+
+Two consequences for implementers:
+
+- The status code alone cannot separate `invalid_token` from `expired_token`: both are 401, and only the message differs. A client that maps every 401 to one outcome will misreport the other. The backend, which knows which branch it took, is the only place this can be classified exactly.
+- The verify endpoint never returns 404. An unknown token is a 401, not "not found".
+
+**Preferred source**
+
+Section 9.2 already lists `Claim Verified` as server-side preferred. Emitting from the verify path (`TokenVerificationProvider`) gives exact classification of the rejections above and direct access to `accountId`, `asset` and `expiresAt`, instead of re-deriving them from a status code in the browser.
+
+> **Implementation status:** Today the event is emitted client-side after `loadClaimView()` resolves, and recipient events use the URL token as `claim_id`, while sender events use `accountId`. Until that changes, the two sides cannot be joined on `claim_id` as section 9.3 intends. See `docs/analytics-server-vs-client-decision.md`.
 
 ---
 
