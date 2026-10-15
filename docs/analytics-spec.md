@@ -369,13 +369,28 @@ The four values and labels come from the Sender Dashboard screen in `bridgelet-f
 
 #### `Payment Details Viewed`
 
-Fired when the sender opens the detail view for a specific payment.
+Fired when the sender opens the detail view for a specific payment **and** that view has rendered the details of a payment the sender owns.
 
 | Property | Type | Value / Description |
 |----------|------|---------------------|
 | `journey` | string | `"sender"` |
-| `claim_id` | string | |
+| `claim_id` | string | Identifier of the payment, taken from the loaded payment record (the backend account id), never copied from the URL |
 | `claim_status` | string | `"unclaimed"`, `"claimed"`, `"expired"` |
+
+**Firing rule: own payments only**
+
+- Fire only after the payment record has been loaded and displayed to the sender it belongs to. The event means "a sender looked at one of their own payments".
+- Do not fire for attempted access. A payment ID that does not exist, belongs to another sender, is rejected by the backend, or fails to load must not produce this event. Those cases render an error state and are reported through `Error Displayed` (section 6) with `claim_id` set to `null`.
+- Never copy an unvalidated ID from the URL into any analytics property. It is attacker-controlled input, and for a payment the sender does not own it is not a payment they have viewed.
+
+**Why attempted access is excluded**
+
+- Counting probes as views would inflate the number of senders inspecting their payments and distort anything derived from it.
+- Client-side analytics is not a security control: events can be forged or dropped, and all events are suppressed when Do Not Track is set (section 9.5). Detecting enumeration of payment-detail URLs therefore belongs on the backend (request logs, rate limiting, ownership checks), not in this event.
+- The sender API should answer "not found" and "not yours" identically so the response itself does not reveal which IDs exist. That is a backend security requirement tracked in `docs/security-model.mdx`, not part of this analytics spec.
+- If the product later wants a signal for denied attempts, add it as a separate server-side event under the naming rules in section 2, not as a variant of this event.
+
+> **Implementation status:** The sender dashboard and its detail view are not built in the frontend yet. Today this event is emitted from the payment confirmation step shown right after a payment is created (`frontend/components/send-form/steps/confirm-step.tsx`, always with `claim_status: "unclaimed"`). That is consistent with the rule above, since it shows the sender their own just-created payment. See `docs/analytics-server-vs-client-decision.md`.
 
 ---
 
