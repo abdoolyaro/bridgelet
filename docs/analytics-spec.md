@@ -333,18 +333,37 @@ Fired when the sender's payment dashboard is loaded.
 |----------|------|---------------------|
 | `journey` | string | `"sender"` |
 | `total_payments` | number | Total number of payments visible to the sender |
-| `active_filter` | string | `"all"`, `"unclaimed"`, `"claimed"`, `"expired"` |
+| `active_filter` | string | Filter active on load. Same closed set as `Dashboard Filter Applied.filter` (see below) |
 
 ---
 
 #### `Dashboard Filter Applied`
 
-Fired when the sender changes the status filter on the dashboard.
+Fired when the sender selects a different status filter on the dashboard. It does not fire on the initial dashboard load (that state is reported by `Dashboard Viewed.active_filter`) or when the sender re-selects the filter that is already active.
 
 | Property | Type | Value / Description |
 |----------|------|---------------------|
 | `journey` | string | `"sender"` |
-| `filter` | string | `"all"`, `"unclaimed"`, `"claimed"`, `"expired"` |
+| `filter` | string | **Closed set:** exactly one of `"all"`, `"unclaimed"`, `"claimed"`, `"expired"` (see below) |
+
+**`filter` values (closed set)**
+
+| `filter` value | Dashboard label | Payments shown |
+|----------------|-----------------|----------------|
+| `all` | All | Every payment, no status restriction |
+| `unclaimed` | Unclaimed | Payments the recipient has not claimed and that have not expired |
+| `claimed` | Claimed | Payments the recipient has claimed |
+| `expired` | Expired | Payments past their expiry (the state in which the sender can reclaim funds) |
+
+The four values and labels come from the Sender Dashboard screen in `bridgelet-frd-ui-ux.md`.
+
+**Rules for `filter` and `active_filter`**
+
+- The set is closed. Any other value is an implementation bug, not a new category.
+- Send the lowercase enum value, never the display label and never user-entered text, so usage can be aggregated with a plain group-by.
+- Status is the only dashboard filter dimension the FRD defines. There is no date-range or asset-type filter today, so no open-ended filter value exists.
+- If another filter dimension is added later (for example date range or asset type), do not widen `filter`. Give the new dimension its own property and document here, in the same change that adds the feature, either its closed set of values or, if it is open-ended (such as a free date range), that it is open-ended and how it is bucketed for aggregation.
+- Open item: the FRD does not say how backend lifecycle statuses beyond claimed and expired (for example `pending_payment` or `failed`) map onto these four buckets. The dashboard implementation must apply one fixed mapping and record it with the dashboard, so the same payment is never counted under two different filters.
 
 ---
 
