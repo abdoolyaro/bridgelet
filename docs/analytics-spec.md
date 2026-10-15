@@ -42,6 +42,19 @@ The purpose of this spec is to:
 | **Sender Journey** | Alice (crypto-literate) | Create a claimable payment link |
 | **Recipient Journey** | Bob (crypto-novice) | Claim crypto sent to them |
 
+### Out of Scope: Integrator Usage
+
+This spec covers end-user journeys only. Actions taken by integrators through the bridgelet-sdk REST API, such as creating, listing, updating or deleting a webhook subscription (`POST`, `GET`, `PUT` and `DELETE` on `/webhooks`), have no events here. This is a deliberate omission, not an oversight.
+
+Reasons:
+- Every event in this spec is a product event raised in a browser session. The base payload in section 3.1 assumes browser context (`anonymous_id` in `localStorage`, `user_agent`, `device_type`, `referrer`), and section 9.5 relies on the browser Do Not Track header. An integrator calling the API from a backend has none of that.
+- The webhook endpoints are authenticated, rate-limited, server-to-server calls. Their usage is already observable from backend request logs.
+
+If integrator usage analytics later become a product goal, extend this spec rather than reusing the end-user events:
+- Add an `integrator` value to the `journey` table in section 2.3 and a third row to the journey table above.
+- Define the events as server-side only, named under the section 2.1 rules, with a server-side base payload that drops the browser fields.
+- Keep secrets out of payloads. A webhook's signing `secret` must never be recorded, and the target `url` should be left out or reduced to its host.
+
 ---
 
 ## 2. Event Naming Conventions
